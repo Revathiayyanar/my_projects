@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title> French Audio Chat </title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --accent: #2b8bf2;
+      --bg: #f4f7fb;
+      --card: #fff;
+      --muted: #6b7280;
+    }
+    body {
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: var(--bg);
+      margin: 0;
+      padding: 30px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #111827;
+      margin-bottom: 30px;
+    }
+
+    /* Bootstrap-like 3x3 layout */
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+    }
+
+    .col-md-4 {
+      flex: 0 0 calc(33.333% - 20px);
+      box-sizing: border-box;
+    }
+
+    .chat-box {
+      background: var(--card);
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      cursor: pointer;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .chat-box:hover {
+      transform: scale(1.05);
+      border-color: var(--accent);
+    }
+
+    /* Popup chat window */
+    .chat-window {
+      width: 360px;
+      height: 480px;
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      background: var(--card);
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform-origin: bottom right;
+      transition: transform 180ms ease, opacity 180ms ease;
+    }
+
+    .chat-hidden { transform: scale(0.9); opacity: 0; pointer-events: none; }
+
+    .chat-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid #eef2f7;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-title { font-weight: 700; }
+    .chat-sub { font-size: 12px; color: var(--muted); }
+
+    .messages {
+      padding: 12px;
+      flex: 1 1 auto;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.01), transparent);
+    }
+
+    .msg { 
+      max-width: 78%; 
+      padding: 8px 10px; 
+      border-radius: 10px; 
+      display: flex; 
+      align-items: center;
+    }
+
+    .msg.me { align-self: flex-end; background: var(--accent); color: white; border-bottom-right-radius: 4px; }
+    .msg.other { align-self: flex-start; background: #f1f5f9; color: #111827; border-bottom-left-radius: 4px; }
+
+    .chat-input {
+      padding: 10px;
+      border-top: 1px solid #eef2f7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .record-btn {
+      border: none;
+      background: var(--accent);
+      color: white;
+      padding: 10px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .recording { background: red !important; }
+  </style>
+</head>
+<body>
+
+  <h1>Audio Chat Rooms </h1>
+
+  <div class="row" id="chatGrid"></div>
+
+  <!-- Popup Chat Window -->
+  <div class="chat-window chat-hidden" id="chatWindow">
+    <div class="chat-header">
+      <div>
+        <div class="chat-title" id="chatTitle">Audio Chat</div>
+        <div class="chat-sub">Demo — Audio only</div>
+      </div>
+      <button id="closeBtn" style="background:none;border:none;cursor:pointer;color:#e03b3b;font-weight:700">✕</button>
+    </div>
+
+    <div class="messages" id="messages"></div>
+
+    <div class="chat-input">
+      <button id="recordBtn" class="record-btn">🎤 Start Recording</button>
+    </div>
+  </div>
+
+<script>
+const chatGrid = document.getElementById('chatGrid');
+const chatWindow = document.getElementById('chatWindow');
+const closeBtn = document.getElementById('closeBtn');
+const recordBtn = document.getElementById('recordBtn');
+const messages = document.getElementById('messages');
+const chatTitle = document.getElementById('chatTitle');
+
+let mediaRecorder;
+let audioChunks = [];
+let recording = false;
+
+// Create exactly 9 chat boxes (3x3 grid)
+for (let i = 1; i <= 9; i++) {
+  const col = document.createElement('div');
+  col.className = 'col-md-4';
+  const box = document.createElement('div');
+  box.className = 'chat-box';
+  box.textContent = 'Chat Room ' + i;
+  box.addEventListener('click', () => openChat('Chat Room ' + i));
+  col.appendChild(box);
+  chatGrid.appendChild(col);
+}
+
+function openChat(name) {
+  chatTitle.textContent = name;
+  chatWindow.classList.remove('chat-hidden');
+  messages.innerHTML = ''; // clear previous messages
+}
+
+closeBtn.addEventListener('click', () => {
+  chatWindow.classList.add('chat-hidden');
+});
+
+function addAudioMessage(blob, from='me') {
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement('div');
+  el.className = 'msg ' + (from === 'me' ? 'me' : 'other');
+  const audio = document.createElement('audio');
+  audio.src = url;
+  audio.controls = true;
+  audio.style.width = '200px';
+  el.appendChild(audio);
+  messages.appendChild(el);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+recordBtn.addEventListener('click', async () => {
+  if (!recording) {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      addAudioMessage(blob, 'me');
+      setTimeout(() => {
+        const dummyBlob = new Blob([], { type: 'audio/webm' });
+        addAudioMessage(dummyBlob, 'other');
+      }, 1000);
+    };
+    mediaRecorder.start();
+    recordBtn.textContent = '⏹ Stop Recording';
+    recordBtn.classList.add('recording');
+    recording = true;
+  } else {
+    mediaRecorder.stop();
+    recordBtn.textContent = '🎤 Start Recording';
+    recordBtn.classList.remove('recording');
+    recording = false;
+  }
+});
+</script>
+
+</body>
+</html>
